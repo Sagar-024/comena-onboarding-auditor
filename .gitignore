@@ -1,0 +1,38 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime scratch space (uploads are deleted after each request)
+backend/uploads/
+uploads/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Tooling / editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local deploy artifacts
+.vercel/

@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.env
+.env.*
+uploads/
+AUDIT_REPORT.md
+AUDIT_REPORT.pdf
+tests/
+*.log
