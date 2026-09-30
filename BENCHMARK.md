@@ -65,27 +65,82 @@ traps), plus `gap` for items that legitimately do not exist.
 
 ## Results
 
-| Matcher | Top-1 | False-match | Gap recall | Gap precision | Review rate | UoM acc |
-|---|---|---|---|---|---|---|
-| A baseline (fuzzy) | — | — | — | — | — | — |
-| B attribute + LLM | — | — | — | — | — | — |
-| C hybrid | — | — | — | — | — | — |
+Frozen test split, 200 rows, one LLM extraction run (10 batches, 0 fallbacks).
 
-Filled in by `run_eval.py`. Placeholder rows are intentional: this table is
-populated only by a real run against the frozen test set.
+| Matcher | Top-1 | False-match | Gap recall | Gap precision | Review rate | Auto rate |
+|---|---|---|---|---|---|---|
+| A baseline (fuzzy) | 64.5% | 11.0% | 40.0% | 27.9% | 29.0% | 49.5% |
+| B attribute + LLM | 78.5% | **2.0%** | 90.0% | 52.9% | 12.0% | 62.5% |
+| C hybrid | **82.0%** | 6.0% | 90.0% | 52.9% | 0.0% | 74.5% |
+
+UoM pack-size accuracy: **21.7%** on the 23 rows that state a pack unit.
+
+Cost of the frozen run: **10 LLM calls, 68,449 tokens, 0 fallbacks**, ~17 min of
+model wall-clock (batches dispatched 8-way concurrent). Model:
+`space-bunny-free` via OpenCode Zen; temperature 0.
+
+**Read B and C carefully.** C wins on top-1 (82.0%) but has a *higher* false-match
+rate than B (6.0% vs 2.0%) because its fuzzy tiebreak auto-resolves cases B would
+tsafely review. If a wrong SKU written into an ERP costs more than a review,
+**B is the safer matcher**, and the top-1 gap is only 3.5 points. C's review rate
+of 0.0% is not a win; it is every ambiguity pushed to a coin flip.
+
+### Test failures — C hybrid (36 of 200)
+
+| cause | count | share |
+|---|---|---|
+| catalog item reported as a gap (matcher gave up) | 24 | 66.7% |
+| wrong SKU auto-matched or true gap force-matched | 12 | 33.3% |
+
+Where they cluster:
+
+- **`customer_pn`: 0/20.** Lines that are a bare customer part number
+  (e.g. `PN-84368B`) share no token with any description. This is a
+  cross-reference problem, not a matching problem; no text matcher can solve it.
+- **Pressure/rating confused with length** in fittings: `FT-Elbow 90-…-10` vs
+  `-1` (a `150#`/`125#` rating misread as a length).
+- **Finish near-miss:** `Zinc Yellow` auto-matched to `Zinc`.
+- **Typos** (`Hx Blt 7/1-614`, `DGBB 8600-ZZ`) are split between recovered and missed.
+
+Full per-row list: `benchmark/results/test_failures.md`.
+
+### Reproduction metadata
+
+| | |
+|---|---|
+| Test SHA256 | `3ccceeae8f9a2bb19538f6f7c95ba9ebaff0a94a5a5ab855c14fa0216e34cf69` |
+| Rows / catalog | 200 / 275 |
+| LLM calls / tokens | 10 / 68,449 |
+| Fallbacks | 0 |
+| Prompt | compact JSON schema, short keys, 8 attributes |
+| max_tokens | 16384 |
+
+A dev-only speed test of a 3000-token budget truncated the model's JSON
+mid-string (reasoning tokens consume the budget), so the safe 16384 budget was
+kept. Prompt changes were measured on dev batch 0 **before** freezing: compact
+top-1 was equal-or-better (B 80% vs 75%), so it was kept.
 
 ---
 
 ## What this does NOT prove
 
 - **Not real data.** Synthetic descriptions I authored, not purchase orders
-  from a distributor.
-- **Not a real catalog.** 275 SKUs vs a distributor's tens of thousands.
+  from a distributor. The 64.5% fuzzy baseline in particular flatters the
+  incumbent: real customer wording is harder than these templates.
+- **Not a real catalog.** 275 SKUs vs a distributor's tens of thousands. At
+  50k SKUs the O(items x catalog) loop in A and B is the first thing to fall
+  over.
 - **Not production traffic.** No OCR, no scanned PDFs, no multi-page documents.
 - **Not Comena's actual catalog.** The hard negatives are ones I imagined,
   which is exactly where a real catalog would surprise us.
-- **UoM accuracy is narrow.** The conversion table covers a handful of pack
-  units, not a distributor's full unit vocabulary.
+- **UoM accuracy is weak and narrow.** 21.7% on 23 rows; the conversion table
+  covers a handful of pack units, and the sample is too small to trust.
+- **One run, one model, temperature 0.** No variance estimate; a different
+  model or a re-run could move these numbers.
+- **The LLM extraction is evaluated on a single batch size (20) and one prompt.**
+  A different batching or prompt could change B/C.
+- **customer_pn rows are unscoreable by design.** 0/20 is a property of the
+  dataset (no shared tokens), not a fixable matcher bug.
 
 ---
 
@@ -95,6 +150,6 @@ populated only by a real run against the frozen test set.
 backend/.venv/Scripts/python.exe benchmark/generate_dataset.py   # freeze
 backend/.venv/Scripts/python.exe benchmark/validate_dataset.py   # integrity
 backend/.venv/Scripts/python.exe benchmark/run_dev.py            # tune here
-backend/.venv/Scripts/python.exe benchmark/run_eval.py --split test --matcher all
-backend/.venv/Scripts/python.exe -m pytest benchmark/tests -q
+backend/.venv/Scripts/python.exe benchmark/run_eval.py --split test
+backend/.venv/Scripts/python.exe -m pytest benchmark/tests backend/tests -q
 ```
